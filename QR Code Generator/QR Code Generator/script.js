@@ -5,6 +5,13 @@ All rights reserved.
 (function () {
   'use strict';
 
+  const QR_BYTE_CAPACITY = {
+    L: 2950,
+    M: 2330,
+    Q: 1660,
+    H: 1270,
+  };
+
   function escapeVCardValue(value) {
     if (!value) return '';
     return String(value)
@@ -15,7 +22,6 @@ All rights reserved.
   }
 
   function foldVCardLine(line) {
-    // vCard folding: subsequent lines start with one space, limit 75 octets (approx chars)
     const max = 75;
     if (line.length <= max) return line;
     const parts = [];
@@ -66,21 +72,19 @@ All rights reserved.
     if (website) lines.push('URL:' + escapeVCardValue(website));
 
     if (street || city || region || postalCode || country) {
-      const adr = ['','', escapeVCardValue(street), escapeVCardValue(city), escapeVCardValue(region), escapeVCardValue(postalCode), escapeVCardValue(country)].join(';');
+      const adr = ['', '', escapeVCardValue(street), escapeVCardValue(city), escapeVCardValue(region), escapeVCardValue(postalCode), escapeVCardValue(country)].join(';');
       lines.push('ADR;TYPE=WORK:' + adr);
     }
 
     if (note) lines.push('NOTE:' + escapeVCardValue(note));
 
-    // PHOTO embedding
+    // PHOTO handling (local only)
     if (fields.photoDataUrl && fields.includePhotoInVcf) {
       const [meta, b64] = fields.photoDataUrl.split(',');
       const isJpeg = /image\/jpeg/i.test(meta);
       const type = isJpeg ? 'JPEG' : 'PNG';
       const photoLine = `PHOTO;ENCODING=b;TYPE=${type}:${b64}`;
-      // Fold the line for RFC compliance
       const folded = foldVCardLine(photoLine);
-      // Split on CRLF to push multiple folded lines
       folded.split('\r\n').forEach(l => lines.push(l));
     }
 
@@ -94,6 +98,7 @@ All rights reserved.
   const qrContainer = $('qrcode');
   const payloadLengthEl = $('payloadLength');
   const vcardPreviewEl = $('vcardPreview');
+  const qrErrorEl = $('qrError');
 
   const downloadPngBtn = $('downloadPngBtn');
   const downloadVcfBtn = $('downloadVcfBtn');
@@ -113,9 +118,14 @@ All rights reserved.
   const errPhoneMobile = $('err-phoneMobile');
   const errPhoneWork = $('err-phoneWork');
   const errWebsite = $('err-website');
+  const hostedVcfUrlInput = $('hostedVcfUrl');
+  const useHostedVcfUrlInput = $('useHostedVcfUrl');
+  const errHostedVcfUrl = $('err-hostedVcfUrl');
 
   let qrInstance = null;
   let currentPhotoDataUrl = '';
+  let originalPhotoFile = null;
+  let isAutoCompressing = false;
 
   function getFieldsFromForm() {
     return {
@@ -128,6 +138,8 @@ All rights reserved.
       phoneWork: $('phoneWork').value,
       email: $('email').value,
       website: $('website').value,
+      hostedVcfUrl: (hostedVcfUrlInput?.value || '').trim(),
+      useHostedVcfUrl: useHostedVcfUrlInput?.checked || false,
       street: $('street').value,
       city: $('city').value,
       region: $('region').value,
@@ -135,7 +147,7 @@ All rights reserved.
       country: $('country').value,
       note: $('note').value,
       photoDataUrl: currentPhotoDataUrl,
-      includePhotoInVcf: includePhotoInVcfInput?.checked || false
+      includePhotoInVcf: includePhotoInVcfInput?.checked || false,
     };
   }
 
@@ -180,17 +192,11 @@ All rights reserved.
     const phoneM = $('phoneMobile');
     const phoneW = $('phoneWork');
     const website = $('website');
+    const hostedVcfUrl = hostedVcfUrlInput?.value.trim();
 
     const hasName = (first.value.trim() || last.value.trim() || full.value.trim());
     setFieldValidity(full, !!hasName, 'Enter at least one of First, Last, or Display name', errName);
-    // Also mark first/last if missing
-    if (!hasName) {
-      first.classList.add('invalid');
-      last.classList.add('invalid');
-    } else {
-      first.classList.remove('invalid');
-      last.classList.remove('invalid');
-    }
+    if (!hasName) { first.classList.add('invalid'); last.classList.add('invalid'); } else { first.classList.remove('invalid'); last.classList.remove('invalid'); }
 
     const emailOk = isValidEmail(email.value.trim());
     setFieldValidity(email, emailOk, 'Enter a valid email (e.g., name@example.com)', errEmail);
@@ -204,30 +210,55 @@ All rights reserved.
     const siteOk = isValidWebsite(website.value.trim());
     setFieldValidity(website, siteOk, 'Enter a valid URL starting with http:// or https://', errWebsite);
 
-    return hasName && emailOk && phoneMOk && phoneWOk && siteOk;
+    let hostedUrlOk = true;
+    if (useHostedVcfUrlInput?.checked) {
+      hostedUrlOk = isValidWebsite(hostedVcfUrl);
+    }
+    setFieldValidity(hostedVcfUrlInput, hostedUrlOk, 'Enter a valid https:// URL to a .vcf file', errHostedVcfUrl);
+
+    return hasName && emailOk && phoneMOk && phoneWOk && siteOk && hostedUrlOk;
   }
 
   function updateQr(vcard) {
     const size = Math.max(128, Math.min(1024, parseInt($('qrSize').value || '320', 10)));
-    const levelKey = ($('qrLevel').value || 'M').toUpperCase();
+    let levelKey = ($('qrLevel').value || 'M').toUpperCase();
     const colorDark = $('darkColor').value || '#000000';
     const colorLight = $('lightColor').value || '#ffffff';
+
+    // Capacity guard with auto-lowering ECC if needed
+    let capacity = QR_BYTE_CAPACITY[levelKey] || QR_BYTE_CAPACITY.M;
+    if (vcard.length > capacity) {
+      const order = ['H','Q','M','L'];
+      const idx = order.indexOf(levelKey);
+      for (let i = idx + 1; i < order.length; i++) {
+        const candidate = order[i];
+        const cap = QR_BYTE_CAPACITY[candidate];
+        if (vcard.length <= cap) {
+          levelKey = candidate;
+          capacity = cap;
+          $('qrLevel').value = candidate;
+          if (qrErrorEl) qrErrorEl.textContent = '';
+          break;
+        }
+      }
+    }
+
+    if (vcard.length > capacity) {
+      qrContainer.innerHTML = '';
+      if (qrErrorEl) {
+        qrErrorEl.textContent = `QR payload too large for level ${levelKey}. Consider reducing image size/quality or disabling embedding.`;
+      }
+      return;
+    } else if (qrErrorEl) {
+      qrErrorEl.textContent = '';
+    }
 
     if (!window.QRCode) {
       vcardPreviewEl.textContent = 'Error: QR library not loaded.';
       return;
     }
 
-    if (!qrInstance) {
-      qrInstance = new window.QRCode(qrContainer, {
-        text: vcard,
-        width: size,
-        height: size,
-        colorDark: colorDark,
-        colorLight: colorLight,
-        correctLevel: window.QRCode.CorrectLevel[levelKey] || window.QRCode.CorrectLevel.M
-      });
-    } else {
+    try {
       qrContainer.innerHTML = '';
       qrInstance = new window.QRCode(qrContainer, {
         text: vcard,
@@ -237,6 +268,11 @@ All rights reserved.
         colorLight: colorLight,
         correctLevel: window.QRCode.CorrectLevel[levelKey] || window.QRCode.CorrectLevel.M
       });
+    } catch (e) {
+      qrContainer.innerHTML = '';
+      if (qrErrorEl) {
+        qrErrorEl.textContent = 'Failed to render QR. Try reducing payload or changing options.';
+      }
     }
   }
 
@@ -244,13 +280,34 @@ All rights reserved.
     const fields = getFieldsFromForm();
     const formValid = validateAndDisplay();
 
-    let vcard = buildVCard(fields);
+    // If using a hosted .vcf URL for QR payload, prefer it directly
+    if (useHostedVcfUrlInput?.checked && fields.hostedVcfUrl) {
+      vcardPreviewEl.textContent = 'QR content: ' + fields.hostedVcfUrl;
+      payloadLengthEl.textContent = fields.hostedVcfUrl.length.toString();
+      updateQr(fields.hostedVcfUrl);
+      downloadPngBtn.disabled = !formValid;
+      downloadVcfBtn.disabled = !formValid;
+      copyVcardBtn.disabled = !formValid;
+      return;
+    }
+
+    // Decide PHOTO inclusion for QR vCard (local only)
+    let effectiveFields = { ...fields };
     if (embedPhotoInQrInput?.checked) {
       if (!fields.includePhotoInVcf && fields.photoDataUrl) {
-        vcard = buildVCard({ ...fields, includePhotoInVcf: true });
+        effectiveFields = { ...effectiveFields, includePhotoInVcf: true };
       }
     } else {
-      vcard = buildVCard({ ...fields, includePhotoInVcf: false });
+      effectiveFields = { ...effectiveFields, includePhotoInVcf: false, photoDataUrl: '' };
+    }
+
+    let vcard = buildVCard(effectiveFields);
+
+    // Attempt auto-compress to fit capacity when embedding photo data
+    const levelKey = ($('qrLevel').value || 'M').toUpperCase();
+    const capacity = QR_BYTE_CAPACITY[levelKey] || QR_BYTE_CAPACITY.M;
+    if (embedPhotoInQrInput?.checked && currentPhotoDataUrl && vcard.length > capacity) {
+      attemptAutoCompressToFit(levelKey).catch(() => {/* noop */});
     }
 
     vcardPreviewEl.textContent = vcard;
@@ -284,7 +341,6 @@ All rights reserved.
   }
 
   function downloadVcf() {
-    // Always respect includePhotoInVcf for the file content
     const fields = getFieldsFromForm();
     const vcard = buildVCard(fields);
     const name = (($('fileName').value || 'contact').trim() || 'contact') + '.vcf';
@@ -301,8 +357,9 @@ All rights reserved.
 
   async function copyVcard() {
     const fields = getFieldsFromForm();
-    // Follow current QR payload selection for copy
-    const vcard = embedPhotoInQrInput?.checked ? buildVCard({ ...fields, includePhotoInVcf: true }) : buildVCard({ ...fields, includePhotoInVcf: false });
+    const vcard = embedPhotoInQrInput?.checked
+      ? buildVCard({ ...fields, includePhotoInVcf: true })
+      : buildVCard({ ...fields, includePhotoInVcf: false, photoDataUrl: '' });
     try {
       await navigator.clipboard.writeText(vcard);
       copyVcardBtn.textContent = 'Copied!';
@@ -320,6 +377,7 @@ All rights reserved.
   function resetForm() {
     form.reset();
     setPhoto('');
+    originalPhotoFile = null;
     updateAll();
   }
 
@@ -347,8 +405,6 @@ All rights reserved.
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, width, height);
-
-          // Output as JPEG for better QR payload size unless original is PNG and user wants PNG
           const type = 'image/jpeg';
           const dataUrl = canvas.toDataURL(type, Math.min(0.95, Math.max(0.4, jpegQuality || 0.8)));
           resolve(dataUrl);
@@ -361,14 +417,49 @@ All rights reserved.
     });
   }
 
+  function resizeImageFromSourceToDataUrl(source, maxDim, jpegQuality) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        const scale = Math.min(1, maxDim / Math.max(width, height));
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const type = 'image/jpeg';
+        const dataUrl = canvas.toDataURL(type, Math.min(0.95, Math.max(0.4, jpegQuality || 0.8)));
+        resolve(dataUrl);
+      };
+      img.onerror = reject;
+
+      if (typeof source === 'string') {
+        img.src = source;
+      } else if (source && typeof source === 'object') {
+        const reader = new FileReader();
+        reader.onload = () => { img.src = reader.result; };
+        reader.onerror = reject;
+        reader.readAsDataURL(source);
+      } else {
+        reject(new Error('Unsupported image source'));
+      }
+    });
+  }
+
   async function onPhotoSelected(ev) {
     const file = ev.target.files && ev.target.files[0];
-    if (!file) { setPhoto(''); updateAll(); return; }
+    if (!file) { setPhoto(''); originalPhotoFile = null; updateAll(); return; }
+    originalPhotoFile = file;
     const maxDim = parseInt(photoMaxDimInput.value || '512', 10);
     const quality = parseFloat(photoQualityInput.value || '0.8');
     try {
-      const dataUrl = await resizeImageToDataUrl(file, Math.max(128, Math.min(1024, maxDim)), quality);
+      const dataUrl = await resizeImageToDataUrl(file, Math.max(64, Math.min(1024, maxDim)), quality);
       setPhoto(dataUrl);
+      if (embedPhotoInQrInput) embedPhotoInQrInput.checked = true;
+      if (includePhotoInVcfInput) includePhotoInVcfInput.checked = true;
       updateAll();
     } catch (e) {
       setPhoto('');
@@ -376,13 +467,77 @@ All rights reserved.
     }
   }
 
+  async function recompressFromOriginal() {
+    if (!originalPhotoFile) return;
+    const maxDim = parseInt(photoMaxDimInput.value || '512', 10);
+    const quality = parseFloat(photoQualityInput.value || '0.8');
+    try {
+      const dataUrl = await resizeImageFromSourceToDataUrl(originalPhotoFile, Math.max(64, Math.min(1024, maxDim)), quality);
+      setPhoto(dataUrl);
+      updateAll();
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  async function attemptAutoCompressToFit(levelKey) {
+    if (isAutoCompressing) return;
+    if (!embedPhotoInQrInput?.checked || !currentPhotoDataUrl) return;
+
+    const capacity = QR_BYTE_CAPACITY[levelKey] || QR_BYTE_CAPACITY.M;
+    const fieldsBase = getFieldsFromForm();
+
+    let v = buildVCard({ ...fieldsBase, includePhotoInVcf: true });
+    if (v.length <= capacity) return;
+
+    isAutoCompressing = true;
+    try {
+      const startDim = parseInt(photoMaxDimInput.value || '512', 10);
+      const startQ = parseFloat(photoQualityInput.value || '0.8');
+      const dimCandidates = Array.from(new Set([
+        startDim,
+        Math.round(startDim * 0.85),
+        Math.round(startDim * 0.7),
+        512, 448, 384, 352, 320, 288, 256, 224, 192, 160, 144, 128, 96, 80, 64
+      ])).filter(d => d >= 64 && d <= 1024);
+      const qCandidates = Array.from(new Set([
+        startQ,
+        Math.max(0.75, startQ - 0.1),
+        Math.max(0.65, startQ - 0.2),
+        0.6, 0.55, 0.5, 0.45, 0.4
+      ])).filter(q => q >= 0.4 && q <= 0.95);
+
+      for (const d of dimCandidates) {
+        for (const q of qCandidates) {
+          try {
+            const src = originalPhotoFile || currentPhotoDataUrl;
+            const dataUrl = await resizeImageFromSourceToDataUrl(src, d, q);
+            setPhoto(dataUrl);
+            const v2 = buildVCard({ ...getFieldsFromForm(), includePhotoInVcf: true });
+            if (v2.length <= capacity) {
+              photoMaxDimInput.value = String(d);
+              photoQualityInput.value = String(q);
+              updateAll();
+              return;
+            }
+          } catch (_) {
+            // try next combo
+          }
+        }
+      }
+      updateAll();
+    } finally {
+      isAutoCompressing = false;
+    }
+  }
+
   function clearPhoto() {
     photoFileInput.value = '';
     setPhoto('');
+    originalPhotoFile = null;
     updateAll();
   }
 
-  // Bind events
   form.addEventListener('input', updateAll);
   form.addEventListener('change', updateAll);
   downloadPngBtn.addEventListener('click', downloadPng);
@@ -392,10 +547,12 @@ All rights reserved.
 
   photoFileInput.addEventListener('change', onPhotoSelected);
   clearPhotoBtn.addEventListener('click', clearPhoto);
-  photoMaxDimInput.addEventListener('change', () => { if (currentPhotoDataUrl) updateAll(); });
-  photoQualityInput.addEventListener('change', () => { if (currentPhotoDataUrl) updateAll(); });
+  photoMaxDimInput.addEventListener('change', () => { if (currentPhotoDataUrl) { recompressFromOriginal(); } });
+  photoQualityInput.addEventListener('change', () => { if (currentPhotoDataUrl) { recompressFromOriginal(); } });
   includePhotoInVcfInput.addEventListener('change', updateAll);
   embedPhotoInQrInput.addEventListener('change', updateAll);
+  useHostedVcfUrlInput.addEventListener('change', updateAll);
+  hostedVcfUrlInput.addEventListener('input', updateAll);
 
   document.addEventListener('DOMContentLoaded', updateAll);
   updateAll();

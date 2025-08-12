@@ -78,6 +78,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .code { background: #0f1116; color: #b8c2d8; padding: 10px; border-radius: 8px; overflow: auto; max-height: 260px; border: 1px solid var(--border); }
 
 .app-footer { margin-top: 16px; color: var(--muted); text-align: center; }
+.error { color: var(--danger); text-align: center; margin-top: 8px; font-size: 13px; min-height: 16px; }
 
 @media (max-width: 980px) {
   .content { grid-template-columns: 1fr; }
