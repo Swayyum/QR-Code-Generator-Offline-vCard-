@@ -1,0 +1,14 @@
+#
+# Copyright © 2025 Sam Analytic Solutions
+# All rights reserved.
+#
+
+# Node/Electron build outputs
+node_modules/
+electron/node_modules/
+electron/dist/
+electron/build/
+
+# OS artifacts
+.DS_Store
+Thumbs.db 

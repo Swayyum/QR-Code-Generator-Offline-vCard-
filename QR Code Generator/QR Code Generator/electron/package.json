@@ -1,0 +1,57 @@
+{
+  "name": "qr-vcard-generator",
+  "version": "1.0.2",
+  "description": "Offline QR vCard Generator (Electron Wrapper)",
+  "author": "Swayam Mehta",
+  "license": "UNLICENSED",
+  "main": "electron-main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win portable",
+    "build:mac": "electron-builder --mac dmg",
+    "pack": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.sas.qr-vcard-generator",
+    "productName": "QR vCard Generator",
+    "asar": true,
+    "artifactName": "QR vCard Generator-${version}-${arch}-${os}.${ext}",
+    "files": [
+      "electron-main.js"
+    ],
+    "extraResources": [
+      {
+        "from": "../",
+        "to": "app-web",
+        "filter": [
+          "index.html",
+          "styles.css",
+          "script.js",
+          "libs/**"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ]
+    }
+  }
+} 

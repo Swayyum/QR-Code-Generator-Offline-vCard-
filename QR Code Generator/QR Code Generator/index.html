@@ -1,0 +1,210 @@
+<!--
+Copyright © 2025 Sam Analytic Solutions
+All rights reserved.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QR vCard Generator (Offline)</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="container">
+    <header class="app-header">
+      <h1>QR vCard Generator (Offline)</h1>
+      <p>Fill in contact info; the QR updates live. Works on Android and iPhone camera apps offline.</p>
+    </header>
+
+    <section class="content">
+      <form id="vcard-form" class="form">
+        <fieldset>
+          <legend>Identity</legend>
+          <div class="field-row">
+            <label for="firstName">First name</label>
+            <input id="firstName" name="firstName" type="text" autocomplete="given-name" />
+          </div>
+          <div class="field-row">
+            <label for="lastName">Last name</label>
+            <input id="lastName" name="lastName" type="text" autocomplete="family-name" />
+          </div>
+          <div class="field-row">
+            <label for="fullName">Display name</label>
+            <input id="fullName" name="fullName" type="text" placeholder="If blank, uses First + Last" />
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Company</legend>
+          <div class="field-row">
+            <label for="organization">Organization</label>
+            <input id="organization" name="organization" type="text" autocomplete="organization" />
+          </div>
+          <div class="field-row">
+            <label for="title">Job title</label>
+            <input id="title" name="title" type="text" />
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Contact</legend>
+          <div class="field-row">
+            <label for="phoneMobile">Mobile</label>
+            <input id="phoneMobile" name="phoneMobile" type="tel" inputmode="tel" placeholder="+1 555 123 4567" />
+          </div>
+          <div class="field-row">
+            <label for="phoneWork">Work</label>
+            <input id="phoneWork" name="phoneWork" type="tel" inputmode="tel" />
+          </div>
+          <div class="field-row">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" autocomplete="email" />
+          </div>
+          <div class="field-row">
+            <label for="website">Website</label>
+            <input id="website" name="website" type="url" placeholder="https://example.com" />
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Address</legend>
+          <div class="field-row">
+            <label for="street">Street</label>
+            <input id="street" name="street" type="text" autocomplete="street-address" />
+          </div>
+          <div class="cols-2">
+            <div class="field-row">
+              <label for="city">City</label>
+              <input id="city" name="city" type="text" autocomplete="address-level2" />
+            </div>
+            <div class="field-row">
+              <label for="region">State/Region</label>
+              <input id="region" name="region" type="text" autocomplete="address-level1" />
+            </div>
+          </div>
+          <div class="cols-2">
+            <div class="field-row">
+              <label for="postalCode">Postal code</label>
+              <input id="postalCode" name="postalCode" type="text" autocomplete="postal-code" />
+            </div>
+            <div class="field-row">
+              <label for="country">Country</label>
+              <input id="country" name="country" type="text" autocomplete="country" />
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Photo</legend>
+          <div class="photo-row">
+            <div class="avatar-preview">
+              <img id="photoPreview" alt="Profile preview" />
+            </div>
+            <div class="photo-controls">
+              <div class="field-row">
+                <label for="photoFile">Profile photo</label>
+                <input id="photoFile" name="photoFile" type="file" accept="image/*" />
+              </div>
+              <div class="cols-2">
+                <div class="field-row">
+                  <label for="photoMaxDim">Max dimension (px)</label>
+                  <input id="photoMaxDim" name="photoMaxDim" type="number" min="128" max="1024" step="64" value="512" />
+                </div>
+                <div class="field-row">
+                  <label for="photoQuality">JPEG quality (0.4–0.95)</label>
+                  <input id="photoQuality" name="photoQuality" type="number" min="0.4" max="0.95" step="0.05" value="0.8" />
+                </div>
+              </div>
+              <div class="cols-2">
+                <div class="field-row">
+                  <label class="checkbox">
+                    <input id="includePhotoInVcf" type="checkbox" checked /> Include in .vcf download
+                  </label>
+                </div>
+                <div class="field-row">
+                  <label class="checkbox">
+                    <input id="embedPhotoInQr" type="checkbox" /> Embed in QR (increases size)
+                  </label>
+                </div>
+              </div>
+              <div class="field-row">
+                <button id="clearPhotoBtn" type="button" class="secondary">Remove photo</button>
+              </div>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Notes</legend>
+          <div class="field-row">
+            <label for="note">Note</label>
+            <textarea id="note" name="note" rows="3" placeholder="Additional info"></textarea>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>QR options</legend>
+          <div class="cols-3">
+            <div class="field-row">
+              <label for="qrSize">Size</label>
+              <input id="qrSize" name="qrSize" type="number" min="128" max="1024" step="32" value="320" />
+            </div>
+            <div class="field-row">
+              <label for="qrLevel">Error correction</label>
+              <select id="qrLevel" name="qrLevel">
+                <option value="M" selected>M (default)</option>
+                <option value="Q">Q</option>
+                <option value="H">H</option>
+                <option value="L">L</option>
+              </select>
+            </div>
+            <div class="field-row">
+              <label for="darkColor">Dark color</label>
+              <input id="darkColor" name="darkColor" type="color" value="#000000" />
+            </div>
+          </div>
+          <div class="cols-3">
+            <div class="field-row">
+              <label for="lightColor">Light color</label>
+              <input id="lightColor" name="lightColor" type="color" value="#ffffff" />
+            </div>
+            <div class="field-row">
+              <label for="fileName">File name</label>
+              <input id="fileName" name="fileName" type="text" placeholder="contact" value="contact" />
+            </div>
+            <div class="field-row align-end">
+              <button id="resetBtn" type="button" class="secondary">Reset</button>
+            </div>
+          </div>
+        </fieldset>
+      </form>
+
+      <aside class="preview">
+        <div class="qr-wrap">
+          <div id="qrcode" class="qr"></div>
+        </div>
+        <div class="actions">
+          <button id="downloadPngBtn" type="button">Download QR PNG</button>
+          <button id="downloadVcfBtn" type="button" class="secondary">Download .vcf</button>
+          <button id="copyVcardBtn" type="button" class="secondary">Copy vCard</button>
+        </div>
+        <div class="meta">
+          <div><strong>Payload length:</strong> <span id="payloadLength">0</span> chars</div>
+          <details>
+            <summary>Show vCard</summary>
+            <pre id="vcardPreview" class="code"></pre>
+          </details>
+        </div>
+      </aside>
+    </section>
+
+    <footer class="app-footer">
+      <small>vCard 3.0 with optional embedded PHOTO. Be mindful: embedding images increases QR size and may affect scanning. No data leaves your device.</small>
+    </footer>
+  </main>
+
+  <script src="libs/qrcode.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html> 
